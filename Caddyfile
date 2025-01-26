@@ -1,0 +1,56 @@
+# Assuming Ollama is running on localhost:11434
+# Assuming external domain is ollama.example.com and desired port is 11435
+# Assuming TLS cert is already acquired and key/cert is at /opt/ssl/
+# Option to have specific IP's bypass authentication
+
+https://ollama.example.com:11435 {
+    tls /opt/ssl/cert.pem /opt/ssl/key.pem
+
+    # Set CORS headers
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.origin}
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Max-Age 1728000
+        respond "" 204
+    }
+
+    handle {
+        # Add CORS headers
+        header Access-Control-Allow-Origin {http.request.header.origin}
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+
+        # Validate Authorization header, with exemption for IP
+#        @exempt remote_ip 196.168.8.5 ## Can create exemption for an IP that you don't want auth for (optional)
+        @unauthorized {
+#            not remote_ip 196.168.8.5 ## As above
+            not header Authorization "Bearer RANDOM_32_CHAR_STRING_HERE"
+        }
+
+        handle @exempt {
+            reverse_proxy 127.0.0.1:11434 {
+                header_up Host {host}
+                header_down -Access-Control-Allow-Origin
+                header_down -Access-Control-Allow-Methods
+                header_down -Access-Control-Allow-Headers
+                header_down -Access-Control-Expose-Headers
+            }
+        }
+
+        handle @unauthorized {
+            respond "Unauthorized" 401
+        }
+
+        # Proxy for other authorized requests
+        reverse_proxy 127.0.0.1:11434 {
+            header_up Host {host}
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Access-Control-Expose-Headers
+        }
+    }
+}
